@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Mini Minecraft</title>
+
+<style>
+body {
+    margin: 0;
+    overflow: hidden;
+    background: #87ceeb;
+}
+
+#ui {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    color: white;
+    font-family: sans-serif;
+    background: rgba(0,0,0,0.5);
+    padding: 10px;
+    border-radius: 8px;
+}
+</style>
+</head>
+
+<body>
+
+<div id="ui">
+WASD: 移動<br>
+左クリック: ブロック設置<br>
+右クリック: ブロック削除
+</div>
+
+<script type="module">
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.module.js";
+import { PointerLockControls } from "https://cdn.jsdelivr.net/npm/three@0.158.0/examples/jsm/controls/PointerLockControls.js";
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87ceeb);
+
+const camera = new THREE.PerspectiveCamera(
+    75,
+    window.innerWidth/window.innerHeight,
+    0.1,
+    1000
+);
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(window.innerWidth,window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+const light = new THREE.DirectionalLight(0xffffff,2);
+light.position.set(50,100,50);
+scene.add(light);
+
+scene.add(new THREE.AmbientLight(0xffffff,0.6));
+
+const controls = new PointerLockControls(camera, document.body);
+
+document.addEventListener("click",()=>{
+    controls.lock();
+});
+
+scene.add(controls.getObject());
+
+camera.position.set(0,5,10);
+
+const blockGeo = new THREE.BoxGeometry(1,1,1);
+
+function createBlock(x,y,z,color=0x55aa55){
+    const mat = new THREE.MeshLambertMaterial({color});
+    const block = new THREE.Mesh(blockGeo,mat);
+    block.position.set(x,y,z);
+    scene.add(block);
+    blocks.push(block);
+}
+
+const blocks = [];
+
+// 地面生成
+for(let x=-20;x<=20;x++){
+  for(let z=-20;z<=20;z++){
+      createBlock(x,0,z,0x44aa44);
+  }
+}
+
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+
+document.addEventListener("mousedown",(e)=>{
+
+    raycaster.setFromCamera(
+        new THREE.Vector2(0,0),
+        camera
+    );
+
+    const hits = raycaster.intersectObjects(blocks);
+
+    if(hits.length===0) return;
+
+    const target = hits[0].object;
+
+    if(e.button===0){
+
+        const pos = target.position.clone();
+        pos.add(
+            hits[0].face.normal
+        );
+
+        createBlock(
+            pos.x,
+            pos.y,
+            pos.z,
+            0x888888
+        );
+    }
+
+    if(e.button===2){
+
+        if(target.position.y>0){
+            scene.remove(target);
+
+            const index = blocks.indexOf(target);
+            if(index>-1){
+                blocks.splice(index,1);
+            }
+        }
+    }
+});
+
+document.addEventListener("contextmenu",e=>{
+    e.preventDefault();
+});
+
+const keys = {};
+
+document.addEventListener("keydown",e=>{
+    keys[e.key.toLowerCase()] = true;
+});
+
+document.addEventListener("keyup",e=>{
+    keys[e.key.toLowerCase()] = false;
+});
+
+function animate(){
+
+    requestAnimationFrame(animate);
+
+    const speed = 0.12;
+
+    if(keys["w"]) controls.moveForward(speed);
+    if(keys["s"]) controls.moveForward(-speed);
+    if(keys["a"]) controls.moveRight(-speed);
+    if(keys["d"]) controls.moveRight(speed);
+
+    renderer.render(scene,camera);
+}
+
+animate();
+
+window.addEventListener("resize",()=>{
+    camera.aspect = window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(
+        window.innerWidth,
+        window.innerHeight
+    );
+});
+</script>
+
+</body>
+</html>
