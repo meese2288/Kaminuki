@@ -675,6 +675,8 @@
         const bloodSpots = [];   // 頭皮に残る血痕
         const bloodDrips = [];   // 顔を垂れる血の雫
         const particles = [];    // 飛び散る血しぶき・毛・擬音
+        const screenSplats = []; // 画面（レンズ）に張り付く血しぶき
+        let isHeadExploded = false; // 頭が爆発したかどうかのフラグ
 
         function spawnBloodEffect(x, y) {
             bloodSpots.push({
@@ -1229,6 +1231,8 @@
             bloodSpots.length = 0;
             bloodDrips.length = 0;
             particles.length = 0;
+            screenSplats.length = 0;
+            isHeadExploded = false;
 
             gameState = 'PLAYING';
             timerStarted = false;
@@ -1337,14 +1341,45 @@
 
         function triggerGameOver() {
             gameState = 'GAMEOVER';
+            isHeadExploded = true; // 頭を吹き飛ばす！
+            screenShake = 38;      // 画面を激しく揺らす！
+
             pointerState.grabbedHair = null;
             powerMeterBox.classList.add('opacity-0');
             hud.classList.add('hidden');
             bottomControls.classList.add('hidden');
             sfx.playGameOver();
 
-            document.getElementById('gameOverRemain').textContent = remainingHairs.toLocaleString();
-            gameOverScreen.classList.remove('hidden');
+            // 1. 頭の中心から大量の血しぶきパーティクルを四方八方に飛ばす
+            for (let i = 0; i < 150; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const spd = 4 + Math.random() * 20;
+                particles.push({
+                    type: 'blood',
+                    x: headCenterX + (Math.random() - 0.5) * 70,
+                    y: headCenterY - 20 + (Math.random() - 0.5) * 70,
+                    vx: Math.cos(angle) * spd,
+                    vy: Math.sin(angle) * spd - 5,
+                    size: 4 + Math.random() * 10,
+                    life: 1.6
+                });
+            }
+
+            // 2. 画面（カメラレンズ）に血痕をベチャッと張り付かせる
+            for (let i = 0; i < 42; i++) {
+                screenSplats.push({
+                    x: Math.random() * width,
+                    y: Math.random() * height,
+                    r: 16 + Math.random() * 60,
+                    dripSpeed: 0.15 + Math.random() * 0.45
+                });
+            }
+
+            // 3. 爆発の余韻を見せるため、1.3秒後にリザルト画面を出す
+            setTimeout(() => {
+                document.getElementById('gameOverRemain').textContent = remainingHairs.toLocaleString();
+                gameOverScreen.classList.remove('hidden');
+            }, 1300);
         }
 
         function finishGame() {
@@ -1561,14 +1596,49 @@
             // 背景クリア
             ctx.clearRect(0, 0, width, height);
 
-            // 強面キャラクターの顔を描画
-            drawToughGuyFace();
+            if (!isHeadExploded) {
+                // 通常時：強面キャラクターの顔と10,000本の髪を描画
+                drawToughGuyFace();
+                updateAndDrawHairs();
+            } else {
+                // 爆発後：吹き飛んだ首の断面とタンクトップだけ残す
+                const shakeX = screenShake > 0 ? (Math.random() - 0.5) * screenShake : 0;
+                const shakeY = screenShake > 0 ? (Math.random() - 0.5) * screenShake : 0;
+                ctx.save();
+                ctx.translate(headCenterX + shakeX, headCenterY + shakeY);
 
-            // 10,000本のしなやかな髪の毛を描画
-            updateAndDrawHairs();
+                // 首
+                ctx.fillStyle = '#c48660';
+                ctx.beginPath();
+                ctx.roundRect(-headRadiusX * 0.52, headRadiusY * 0.72, headRadiusX * 1.04, headRadiusY * 0.65, 20);
+                ctx.fill();
+
+                // 首の断面（血）
+                ctx.fillStyle = '#991b1b';
+                ctx.beginPath();
+                ctx.ellipse(0, headRadiusY * 0.75, headRadiusX * 0.48, headRadiusY * 0.14, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // タンクトップ
+                ctx.fillStyle = '#181a24';
+                ctx.beginPath();
+                ctx.ellipse(0, headRadiusY * 1.48, headRadiusX * 1.25, headRadiusY * 0.55, 0, Math.PI, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
 
             // 出血＆パーティクル描画
             drawBloodAndParticles();
+
+            // 画面に張り付いて垂れる血しぶき（スプラット）を描画
+            for (let i = 0; i < screenSplats.length; i++) {
+                const sp = screenSplats[i];
+                sp.y += sp.dripSpeed; // ゆっくり下に垂れる演出
+                ctx.fillStyle = 'rgba(185, 15, 15, 0.85)';
+                ctx.beginPath();
+                ctx.arc(sp.x, sp.y, sp.r, 0, Math.PI * 2);
+                ctx.fill();
+            }
         }
 
         window.onload = function () {
