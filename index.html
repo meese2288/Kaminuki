@@ -677,7 +677,11 @@
         const particles = [];    // 飛び散る血しぶき・毛・擬音
         const screenSplats = []; // 画面（レンズ）に張り付く血しぶき
         let isHeadExploded = false; // 頭が爆発したかどうかのフラグ
+        
+        let invincibleTimer = 0; // 虹色毛の無敵残り時間（秒）
+        const goreChunks = [];   // 爆発で飛び散る骨・歯・肉片
 
+        
         function spawnBloodEffect(x, y) {
             bloodSpots.push({
                 nx: (x - headCenterX) / headRadiusX,
@@ -1351,6 +1355,23 @@
             sfx.playGameOver();
 
             // 1. 頭の中心から大量の血しぶきパーティクルを四方八方に飛ばす
+                        goreChunks.length = 0;
+            const chunkTypes = ['bone', 'tooth', 'meat', 'meat', 'bone'];
+            for (let i = 0; i < 35; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const spd = 3 + Math.random() * 14;
+                goreChunks.push({
+                    kind: chunkTypes[i % chunkTypes.length],
+                    x: headCenterX + (Math.random() - 0.5) * 50,
+                    y: headCenterY - 20 + (Math.random() - 0.5) * 50,
+                    vx: Math.cos(angle) * spd,
+                    vy: Math.sin(angle) * spd - 6,
+                    angle: Math.random() * Math.PI * 2,
+                    vAngle: (Math.random() - 0.5) * 0.35,
+                    scale: 0.6 + Math.random() * 0.9
+                });
+            }
+            
             for (let i = 0; i < 150; i++) {
                 const angle = Math.random() * Math.PI * 2;
                 const spd = 4 + Math.random() * 20;
@@ -1580,6 +1601,14 @@
             const dt = (now - lastFrameTime) / 1000;
             lastFrameTime = now;
 
+            if (isHeadExploded && screenShake > 15) {
+                dt *= 0.25; // 4倍スローモーション！
+            }
+            
+            if (invincibleTimer > 0 && gameState === 'PLAYING') {
+                invincibleTimer = Math.max(0, invincibleTimer - dt);
+            }
+
             if (gameState === 'PLAYING' && timerStarted) {
                 elapsedTime = (now - startTime - pausedDuration) / 1000;
                 timerDisplayEl.innerHTML = `${elapsedTime.toFixed(2)}<span class="text-xs ml-0.5 text-gray-400">秒</span>`;
@@ -1638,6 +1667,47 @@
                 ctx.beginPath();
                 ctx.arc(sp.x, sp.y, sp.r, 0, Math.PI * 2);
                 ctx.fill();
+            }
+
+           // 骨・歯・肉片を描画
+            for (let i = 0; i < goreChunks.length; i++) {
+                const g = goreChunks[i];
+                const slowFactor = (isHeadExploded && screenShake > 15) ? 0.25 : 1.0;
+                g.x += g.vx * slowFactor;
+                g.y += g.vy * slowFactor;
+                g.vy += 0.35 * slowFactor; // 重力で落下
+                g.angle += g.vAngle * slowFactor;
+                g.scale += 0.012 * slowFactor; // 手前に迫ってくる遠近感！
+
+                ctx.save();
+                ctx.translate(g.x, g.y);
+                ctx.rotate(g.angle);
+                ctx.scale(g.scale, g.scale);
+
+                if (g.kind === 'bone') {
+                    // 頭蓋骨の破片（アイボリー色）
+                    ctx.fillStyle = '#f5f5dc';
+                    ctx.strokeStyle = '#991b1b';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(-14, -6); ctx.lineTo(12, -10);
+                    ctx.lineTo(16, 8); ctx.lineTo(-8, 12);
+                    ctx.closePath();
+                    ctx.fill(); ctx.stroke();
+                } else if (g.kind === 'tooth') {
+                    // 吹き飛んだ歯
+                    ctx.fillStyle = '#ffffff';
+                    ctx.beginPath();
+                    ctx.roundRect(-5, -8, 10, 16, 3);
+                    ctx.fill();
+                } else {
+                    // 肉片（ダークレッド）
+                    ctx.fillStyle = '#7f1d1d';
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 11, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.restore();
             }
         }
 
