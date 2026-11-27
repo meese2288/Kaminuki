@@ -677,11 +677,7 @@
         const particles = [];    // 飛び散る血しぶき・毛・擬音
         const screenSplats = []; // 画面（レンズ）に張り付く血しぶき
         let isHeadExploded = false; // 頭が爆発したかどうかのフラグ
-        
-        let invincibleTimer = 0; // 虹色毛の無敵残り時間（秒）
-        const goreChunks = [];   // 爆発で飛び散る骨・歯・肉片
 
-        
         function spawnBloodEffect(x, y) {
             bloodSpots.push({
                 nx: (x - headCenterX) / headRadiusX,
@@ -1600,10 +1596,6 @@
             requestAnimationFrame(animate);
             const dt = (now - lastFrameTime) / 1000;
             lastFrameTime = now;
-
-            if (isHeadExploded && screenShake > 15) {
-                dt *= 0.25; // 4倍スローモーション！
-            }
             
             if (invincibleTimer > 0 && gameState === 'PLAYING') {
                 invincibleTimer = Math.max(0, invincibleTimer - dt);
@@ -1669,46 +1661,6 @@
                 ctx.fill();
             }
 
-           // 骨・歯・肉片を描画
-            for (let i = 0; i < goreChunks.length; i++) {
-                const g = goreChunks[i];
-                const slowFactor = (isHeadExploded && screenShake > 15) ? 0.25 : 1.0;
-                g.x += g.vx * slowFactor;
-                g.y += g.vy * slowFactor;
-                g.vy += 0.35 * slowFactor; // 重力で落下
-                g.angle += g.vAngle * slowFactor;
-                g.scale += 0.012 * slowFactor; // 手前に迫ってくる遠近感！
-
-                ctx.save();
-                ctx.translate(g.x, g.y);
-                ctx.rotate(g.angle);
-                ctx.scale(g.scale, g.scale);
-
-                if (g.kind === 'bone') {
-                    // 頭蓋骨の破片（アイボリー色）
-                    ctx.fillStyle = '#f5f5dc';
-                    ctx.strokeStyle = '#991b1b';
-                    ctx.lineWidth = 2;
-                    ctx.beginPath();
-                    ctx.moveTo(-14, -6); ctx.lineTo(12, -10);
-                    ctx.lineTo(16, 8); ctx.lineTo(-8, 12);
-                    ctx.closePath();
-                    ctx.fill(); ctx.stroke();
-                } else if (g.kind === 'tooth') {
-                    // 吹き飛んだ歯
-                    ctx.fillStyle = '#ffffff';
-                    ctx.beginPath();
-                    ctx.roundRect(-5, -8, 10, 16, 3);
-                    ctx.fill();
-                } else {
-                    // 肉片（ダークレッド）
-                    ctx.fillStyle = '#7f1d1d';
-                    ctx.beginPath();
-                    ctx.arc(0, 0, 11, 0, Math.PI * 2);
-                    ctx.fill();
-                }
-                ctx.restore();
-            }
         }
 
         window.onload = function () {
