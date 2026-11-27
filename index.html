@@ -1,173 +1,1582 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<title>Mini Minecraft</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>スポッ！と快感！人間密度10,000本 精密脱毛アタック</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@700;900&display=swap" rel="stylesheet">
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+        }
 
-<style>
-body {
-    margin: 0;
-    overflow: hidden;
-    background: #87ceeb;
-}
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            touch-action: none;
+            font-family: 'M PLUS Rounded 1c', sans-serif;
+            background: radial-gradient(circle at center, #2d3142 0%, #161822 100%);
+        }
 
-#ui {
-    position: absolute;
-    top: 10px;
-    left: 10px;
-    color: white;
-    font-family: sans-serif;
-    background: rgba(0,0,0,0.5);
-    padding: 10px;
-    border-radius: 8px;
-}
-</style>
+        #gameCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            touch-action: none;
+            cursor: crosshair;
+        }
+
+        .btn-pop {
+            transition: transform 0.1s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.1s ease;
+        }
+        .btn-pop:hover:not(:disabled) {
+            transform: translateY(-2px) scale(1.02);
+        }
+        .btn-pop:active:not(:disabled) {
+            transform: translateY(2px) scale(0.96);
+        }
+
+        /* 出血時の画面端レッドフラッシュ */
+        #bloodVignette {
+            pointer-events: none;
+            box-shadow: inset 0 0 80px rgba(220, 20, 20, 0);
+            transition: box-shadow 0.15s ease-out;
+        }
+    </style>
 </head>
+<body class="relative w-full h-full flex items-center justify-center">
 
-<body>
+    <!-- メイン2Dゲームキャンバス -->
+    <canvas id="gameCanvas"></canvas>
 
-<div id="ui">
-WASD: 移動<br>
-左クリック: ブロック設置<br>
-右クリック: ブロック削除
-</div>
+    <!-- 出血ダメージ赤枠オーバーレイ -->
+    <div id="bloodVignette" class="fixed inset-0 z-10"></div>
 
-<script type="module">
-import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.module.js";
-import { PointerLockControls } from "https://cdn.jsdelivr.net/npm/three@0.158.0/examples/jsm/controls/PointerLockControls.js";
+    <!-- HUD（プレイ中の上部ステータスバー） -->
+    <div id="hud" class="hidden absolute top-0 left-0 w-full p-3 sm:p-4 pointer-events-none flex flex-col gap-2 z-20">
+        <div class="flex justify-between items-start w-full gap-2">
+            <!-- 残り本数 -->
+            <div class="bg-gray-900/90 backdrop-blur-md border-2 border-orange-500 rounded-2xl px-3 py-1.5 sm:px-4 sm:py-2 shadow-xl text-white">
+                <div class="text-[10px] sm:text-xs font-bold text-orange-400">のこり毛根</div>
+                <div class="text-lg sm:text-2xl font-black leading-none">
+                    <span id="remainCount">10,000</span><span class="text-xs ml-1 text-gray-400">本</span>
+                </div>
+            </div>
 
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x87ceeb);
+            <!-- 所持毛髪（アップグレード通貨） -->
+            <div class="bg-gray-900/90 backdrop-blur-md border-2 border-emerald-400 rounded-2xl px-3 py-1.5 sm:px-4 sm:py-2 shadow-xl text-white">
+                <div class="text-[10px] sm:text-xs font-bold text-emerald-400">所持毛髪 (通貨)</div>
+                <div class="text-lg sm:text-2xl font-black leading-none text-emerald-300">
+                    <span id="hairCurrency">0</span><span class="text-xs ml-1 text-gray-400">本</span>
+                </div>
+            </div>
 
-const camera = new THREE.PerspectiveCamera(
-    75,
-    window.innerWidth/window.innerHeight,
-    0.1,
-    1000
-);
+            <!-- タイム表示 -->
+            <div class="bg-gray-900/90 backdrop-blur-md border-2 border-amber-400 rounded-2xl px-3 py-1.5 sm:px-4 sm:py-2 shadow-xl text-center text-white">
+                <div class="text-[10px] sm:text-xs font-bold text-amber-400">タイム</div>
+                <div id="timerDisplay" class="text-lg sm:text-2xl font-black font-mono leading-none">
+                    0.00<span class="text-xs ml-0.5 text-gray-400">秒</span>
+                </div>
+            </div>
+        </div>
 
-const renderer = new THREE.WebGLRenderer({antialias:true});
-renderer.setSize(window.innerWidth,window.innerHeight);
-document.body.appendChild(renderer.domElement);
+        <!-- 出血ゲージ＆コンボ -->
+        <div class="flex items-center justify-center gap-2 w-full max-w-lg mx-auto">
+            <div class="flex-1 bg-gray-900/90 backdrop-blur-md border-2 border-red-600 rounded-2xl p-2 shadow-xl">
+                <div class="flex justify-between items-center text-[11px] font-black mb-1 px-1">
+                    <span class="text-red-400">🩸 出血危険度（100%で失血死）</span>
+                    <span id="bloodPercentText" class="text-white font-mono">0%</span>
+                </div>
+                <div class="w-full h-3 bg-gray-800 rounded-full overflow-hidden border border-gray-700">
+                    <div id="bloodBarFill" class="h-full bg-gradient-to-r from-red-700 via-red-500 to-rose-400 transition-all duration-100" style="width: 0%;"></div>
+                </div>
+            </div>
 
-const light = new THREE.DirectionalLight(0xffffff,2);
-light.position.set(50,100,50);
-scene.add(light);
+            <div id="comboBox" class="opacity-0 transition-opacity duration-150 bg-yellow-400 border-2 border-white rounded-2xl px-3 py-2 shadow-lg transform rotate-2 shrink-0">
+                <div id="comboCount" class="text-sm sm:text-lg font-black text-red-700 leading-none">2 COMBO!</div>
+            </div>
+        </div>
 
-scene.add(new THREE.AmbientLight(0xffffff,0.6));
+        <!-- 引っ張りパワーメーター（指で引いている時だけ表示） -->
+        <div id="powerMeterBox" class="opacity-0 transition-opacity duration-75 w-52 mx-auto bg-black/85 border border-white/30 rounded-full px-3 py-1 text-center">
+            <div class="text-[10px] font-bold text-gray-300 mb-0.5" id="powerLabel">絶妙な力で1本ずつ引け！</div>
+            <div class="w-full h-2 bg-gray-700 rounded-full overflow-hidden relative">
+                <div class="absolute top-0 bottom-0 left-[22%] right-[22%] bg-emerald-500/40"></div>
+                <div id="powerBarFill" class="h-full bg-emerald-400 transition-all duration-75" style="width: 0%;"></div>
+            </div>
+        </div>
+    </div>
 
-const controls = new PointerLockControls(camera, document.body);
+    <!-- 下部コントロール（ショップボタン＆リセット） -->
+    <div id="bottomControls" class="hidden absolute bottom-3 left-0 w-full px-4 flex justify-between items-end z-20 pointer-events-none">
+        <button id="inGameRetryBtn" class="pointer-events-auto bg-gray-800/90 hover:bg-gray-700 text-gray-200 font-bold py-2.5 px-4 rounded-full shadow-lg border border-gray-500 text-xs sm:text-sm btn-pop">
+            やりなおす
+        </button>
 
-document.addEventListener("click",()=>{
-    controls.lock();
-});
+        <button id="openShopBtn" class="pointer-events-auto bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-black py-3 px-5 rounded-full shadow-xl border-2 border-white text-sm sm:text-base btn-pop flex items-center gap-2">
+            <span>🛒 毛根アップグレード</span>
+            <span id="shopBadge" class="bg-yellow-400 text-gray-900 text-xs px-2 py-0.5 rounded-full font-black">強化可</span>
+        </button>
+    </div>
 
-scene.add(controls.getObject());
+    <!-- アップグレードショップモーダル -->
+    <div id="shopModal" class="hidden absolute inset-0 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 z-30">
+        <div class="bg-gray-900 border-4 border-emerald-500 rounded-3xl p-5 sm:p-6 max-w-md w-full text-white shadow-2xl">
+            <div class="flex justify-between items-center mb-3">
+                <div>
+                    <h2 class="text-xl sm:text-2xl font-black text-emerald-400">🛒 毛根アップグレード</h2>
+                    <p class="text-xs text-gray-400">抜いた髪の毛を消費して脱毛スキルを強化！</p>
+                </div>
+                <div class="bg-gray-800 border border-emerald-500/50 rounded-2xl px-3 py-1.5 text-right">
+                    <div class="text-[10px] text-gray-400">所持毛髪</div>
+                    <div class="text-base sm:text-lg font-black text-emerald-300"><span id="shopCurrencyDisplay">0</span> 本</div>
+                </div>
+            </div>
 
-camera.position.set(0,5,10);
+            <div class="space-y-2.5 mb-5 max-h-[60vh] overflow-y-auto pr-1">
+                <!-- アップグレード1：精密ピンセット（掴み範囲拡大） -->
+                <div class="bg-gray-800/90 border border-gray-700 rounded-2xl p-3 flex items-center justify-between gap-3">
+                    <div class="flex-1">
+                        <div class="flex items-center gap-2">
+                            <span class="font-black text-sm sm:text-base text-white">🥢 精密ピンセット</span>
+                            <span id="upgGrabLv" class="bg-emerald-900 text-emerald-300 text-xs font-black px-2 py-0.5 rounded-lg">Lv.1</span>
+                        </div>
+                        <p class="text-xs text-gray-400 mt-0.5">指で髪をキャッチする吸着範囲が拡大する</p>
+                    </div>
+                    <button id="buyGrabBtn" onclick="buyUpgrade('grab')" class="btn-pop bg-emerald-600 disabled:bg-gray-700 disabled:text-gray-500 text-white font-black text-xs sm:text-sm py-2.5 px-3.5 rounded-xl shrink-0 border-b-4 border-emerald-900 disabled:border-gray-800">
+                        <span id="costGrab">15</span> 本
+                    </button>
+                </div>
 
-const blockGeo = new THREE.BoxGeometry(1,1,1);
+                <!-- アップグレード2：皮膚保護オイル（出血耐性UP） -->
+                <div class="bg-gray-800/90 border border-gray-700 rounded-2xl p-3 flex items-center justify-between gap-3">
+                    <div class="flex-1">
+                        <div class="flex items-center gap-2">
+                            <span class="font-black text-sm sm:text-base text-white">🧴 皮膚保護オイル</span>
+                            <span id="upgShieldLv" class="bg-blue-900 text-blue-300 text-xs font-black px-2 py-0.5 rounded-lg">Lv.1</span>
+                        </div>
+                        <p class="text-xs text-gray-400 mt-0.5">速く引いても出血しにくくなりダメージ軽減</p>
+                    </div>
+                    <button id="buyShieldBtn" onclick="buyUpgrade('shield')" class="btn-pop bg-blue-600 disabled:bg-gray-700 disabled:text-gray-500 text-white font-black text-xs sm:text-sm py-2.5 px-3.5 rounded-xl shrink-0 border-b-4 border-blue-900 disabled:border-gray-800">
+                        <span id="costShield">20</span> 本
+                    </button>
+                </div>
 
-function createBlock(x,y,z,color=0x55aa55){
-    const mat = new THREE.MeshLambertMaterial({color});
-    const block = new THREE.Mesh(blockGeo,mat);
-    block.position.set(x,y,z);
-    scene.add(block);
-    blocks.push(block);
-}
+                <!-- アップグレード3：高速抜去テクニック（必要引き距離短縮） -->
+                <div class="bg-gray-800/90 border border-gray-700 rounded-2xl p-3 flex items-center justify-between gap-3">
+                    <div class="flex-1">
+                        <div class="flex items-center gap-2">
+                            <span class="font-black text-sm sm:text-base text-white">⚡ 高速抜去テク</span>
+                            <span id="upgSpeedLv" class="bg-amber-900 text-amber-300 text-xs font-black px-2 py-0.5 rounded-lg">Lv.1</span>
+                        </div>
+                        <p class="text-xs text-gray-400 mt-0.5">短いスワイプ距離でも素早く「スポッ！」と抜ける</p>
+                    </div>
+                    <button id="buySpeedBtn" onclick="buyUpgrade('speed')" class="btn-pop bg-amber-600 disabled:bg-gray-700 disabled:text-gray-500 text-white font-black text-xs sm:text-sm py-2.5 px-3.5 rounded-xl shrink-0 border-b-4 border-amber-900 disabled:border-gray-800">
+                        <span id="costSpeed">25</span> 本
+                    </button>
+                </div>
 
-const blocks = [];
+                <!-- 回復アイテム：緊急止血スプレー -->
+                <div class="bg-red-950/40 border border-red-800/60 rounded-2xl p-3 flex items-center justify-between gap-3">
+                    <div class="flex-1">
+                        <div class="flex items-center gap-2">
+                            <span class="font-black text-sm sm:text-base text-rose-300">🩹 緊急止血スプレー</span>
+                        </div>
+                        <p class="text-xs text-gray-400 mt-0.5">出血ゲージを50%回復し、顔の血痕を拭き取る</p>
+                    </div>
+                    <button id="buyHealBtn" onclick="buyUpgrade('heal')" class="btn-pop bg-rose-600 disabled:bg-gray-700 disabled:text-gray-500 text-white font-black text-xs sm:text-sm py-2.5 px-3.5 rounded-xl shrink-0 border-b-4 border-rose-900 disabled:border-gray-800">
+                        <span id="costHeal">30</span> 本
+                    </button>
+                </div>
+            </div>
 
-// 地面生成
-for(let x=-20;x<=20;x++){
-  for(let z=-20;z<=20;z++){
-      createBlock(x,0,z,0x44aa44);
-  }
-}
+            <button onclick="closeShop()" class="w-full btn-pop bg-gray-700 hover:bg-gray-600 text-white font-black py-3 rounded-2xl border-b-4 border-gray-900">
+                脱毛に戻る
+            </button>
+        </div>
+    </div>
 
-const raycaster = new THREE.Raycaster();
-const mouse = new THREE.Vector2();
+    <!-- タイトル画面オーバーレイ（人間密度のみ） -->
+    <div id="titleScreen" class="absolute inset-0 bg-black/55 backdrop-blur-xs flex flex-col items-center justify-center p-4 z-30">
+        <div class="bg-gray-900/95 border-4 border-orange-500 rounded-3xl p-6 sm:p-8 max-w-md w-full text-center shadow-2xl text-white">
+            <div class="inline-block bg-orange-500/20 border border-orange-400 text-orange-300 font-black text-xs px-3 py-1 rounded-full mb-2">
+                2D精密スワイプ・1本ずつ高速脱毛
+            </div>
+            <h1 class="text-2xl sm:text-4xl font-black tracking-tight mb-2 leading-tight">
+                強面男の<br>
+                <span class="text-orange-500">人間密度10,000本</span>
+            </h1>
+            <div class="bg-gray-800/90 rounded-2xl p-3.5 mb-5 text-left text-xs sm:text-sm text-gray-300 space-y-1.5 border border-gray-700">
+                <p>👆 <strong class="text-white">1本ずつスワイプ抜去：</strong>しなやかな毛を1本ずつスワイプして引き抜け！</p>
+                <p>🩸 <strong class="text-white">力加減に注意：</strong>弱すぎると滑り、強すぎると<span class="text-red-400 font-black">大出血</span>！</p>
+                <p>🛒 <strong class="text-white">毛根アップグレード：</strong>抜いた髪をショップで交換して能力強化！</p>
+            </div>
 
-document.addEventListener("mousedown",(e)=>{
+            <!-- 人間密度コースのみ -->
+            <div class="mb-5">
+                <button onclick="startGame()" class="w-full btn-pop bg-gradient-to-r from-orange-500 via-amber-500 to-red-500 text-white font-black text-lg sm:text-xl py-4 px-6 rounded-2xl shadow-lg border-b-4 border-red-900 flex items-center justify-between">
+                    <span>🔥 人間密度アタック</span>
+                    <span class="bg-black/35 px-3 py-1 rounded-xl text-sm">10,000本</span>
+                </button>
+            </div>
 
-    raycaster.setFromCamera(
-        new THREE.Vector2(0,0),
-        camera
-    );
+            <!-- ベストタイム表示 -->
+            <div class="bg-black/50 rounded-2xl p-3 border border-gray-700 text-xs sm:text-sm text-gray-300">
+                <div class="flex justify-between font-bold">
+                    <span>🏆 人間密度 (10,000本) 最速記録:</span>
+                    <span id="bestTimeDisplay" class="text-orange-400 font-black">--.-- 秒</span>
+                </div>
+            </div>
+        </div>
+    </div>
 
-    const hits = raycaster.intersectObjects(blocks);
+    <!-- クリアリザルト画面 -->
+    <div id="resultScreen" class="hidden absolute inset-0 bg-black/65 backdrop-blur-xs flex flex-col items-center justify-center p-4 z-40">
+        <div class="bg-gray-900 border-4 border-yellow-400 rounded-3xl p-6 sm:p-8 max-w-md w-full text-center shadow-2xl text-white">
+            <div id="newRecordBadge" class="hidden inline-block bg-red-600 text-white font-black text-xs px-4 py-1 rounded-full mb-2 animate-bounce">
+                🎉 NEW RECORD! 最速記録更新！
+            </div>
+            <h2 class="text-2xl sm:text-3xl font-black text-yellow-400 mb-1">
+                ✨ 完・全・脱・毛 ✨
+            </h2>
+            <p class="text-gray-300 font-bold text-xs sm:text-sm mb-4">10,000本すべて抜き去りピッカピカ！</p>
 
-    if(hits.length===0) return;
+            <div class="bg-gray-800 border-2 border-yellow-500/50 rounded-2xl p-4 mb-5">
+                <div class="text-xs font-bold text-gray-400 mb-1">クリアタイム</div>
+                <div id="finalTime" class="text-4xl sm:text-5xl font-black text-orange-400 font-mono">
+                    0.00<span class="text-xl text-gray-400 ml-1">秒</span>
+                </div>
+                <div class="mt-2 flex justify-center gap-4 text-xs font-bold text-gray-300">
+                    <span>最大コンボ: <strong id="finalMaxCombo" class="text-yellow-400">0</strong></span>
+                    <span>出血量: <strong id="finalBlood" class="text-red-400">0%</strong></span>
+                </div>
+            </div>
 
-    const target = hits[0].object;
+            <div class="flex gap-3">
+                <button onclick="backToTitle()" class="flex-1 btn-pop bg-gray-700 hover:bg-gray-600 text-gray-200 font-black py-3.5 px-4 rounded-2xl border-b-4 border-gray-900">
+                    タイトルへ
+                </button>
+                <button onclick="startGame()" class="w-3/5 btn-pop bg-gradient-to-r from-orange-500 to-amber-500 text-white font-black py-3.5 px-4 rounded-2xl shadow-lg border-b-4 border-orange-800 text-lg">
+                    もう一回抜く！
+                </button>
+            </div>
+        </div>
+    </div>
 
-    if(e.button===0){
+    <!-- ゲームオーバー画面（大量出血） -->
+    <div id="gameOverScreen" class="hidden absolute inset-0 bg-red-950/80 backdrop-blur-xs flex flex-col items-center justify-center p-4 z-40">
+        <div class="bg-gray-950 border-4 border-red-600 rounded-3xl p-6 sm:p-8 max-w-md w-full text-center shadow-2xl text-white">
+            <div class="text-4xl mb-2">🩸💀🩸</div>
+            <h2 class="text-2xl sm:text-3xl font-black text-red-500 mb-2">
+                大・量・出・血
+            </h2>
+            <p class="text-gray-300 font-bold text-sm mb-5 leading-relaxed">
+                力任せに引き抜きすぎて頭皮が限界を迎えた！<br>
+                ショップで皮膚保護オイルを強化するか、優しく抜こう。
+            </p>
 
-        const pos = target.position.clone();
-        pos.add(
-            hits[0].face.normal
-        );
+            <div class="bg-red-950/50 border border-red-800 rounded-2xl p-3 mb-6 text-sm font-bold text-red-200">
+                残り毛根: <span id="gameOverRemain" class="text-white text-lg font-black">0</span> 本
+            </div>
 
-        createBlock(
-            pos.x,
-            pos.y,
-            pos.z,
-            0x888888
-        );
-    }
+            <div class="flex gap-3">
+                <button onclick="backToTitle()" class="flex-1 btn-pop bg-gray-800 hover:bg-gray-700 text-gray-300 font-black py-3.5 px-4 rounded-2xl border-b-4 border-black">
+                    タイトルへ
+                </button>
+                <button onclick="startGame()" class="w-3/5 btn-pop bg-gradient-to-r from-red-600 to-rose-600 text-white font-black py-3.5 px-4 rounded-2xl shadow-lg border-b-4 border-red-900 text-lg">
+                    リベンジする！
+                </button>
+            </div>
+        </div>
+    </div>
 
-    if(e.button===2){
+    <script>
+        /**
+         * ==========================================
+         * Web Audio API サウンドエフェクト生成
+         * ==========================================
+         */
+        class SoundEffects {
+            constructor() {
+                this.ctx = null;
+            }
 
-        if(target.position.y>0){
-            scene.remove(target);
+            init() {
+                if (!this.ctx) {
+                    const AudioContext = window.AudioContext || window.webkitAudioContext;
+                    this.ctx = new AudioContext();
+                }
+                if (this.ctx.state === 'suspended') {
+                    this.ctx.resume();
+                }
+            }
 
-            const index = blocks.indexOf(target);
-            if(index>-1){
-                blocks.splice(index,1);
+            playPluck(combo = 1) {
+                if (!this.ctx) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+
+                const pitchBoost = Math.min(combo * 14, 420);
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(300 + pitchBoost, now);
+                osc.frequency.exponentialRampToValueAtTime(800 + pitchBoost, now + 0.08);
+
+                gain.gain.setValueAtTime(0.22, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.095);
+            }
+
+            playBleed() {
+                if (!this.ctx) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(165, now);
+                osc.frequency.exponentialRampToValueAtTime(52, now + 0.18);
+
+                gain.gain.setValueAtTime(0.32, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.19);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.2);
+            }
+
+            playSlip() {
+                if (!this.ctx) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(220, now);
+                osc.frequency.linearRampToValueAtTime(140, now + 0.06);
+
+                gain.gain.setValueAtTime(0.08, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.065);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.07);
+            }
+
+            playUpgrade() {
+                if (!this.ctx) return;
+                const now = this.ctx.currentTime;
+                [523.25, 783.99].forEach((freq, i) => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(freq, now + i * 0.06);
+                    gain.gain.setValueAtTime(0.2, now + i * 0.06);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.06 + 0.2);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(now + i * 0.06);
+                    osc.stop(now + i * 0.06 + 0.22);
+                });
+            }
+
+            playClear() {
+                if (!this.ctx) return;
+                const now = this.ctx.currentTime;
+                const notes = [523.25, 659.25, 783.99, 1046.50, 1318.51];
+                notes.forEach((freq, idx) => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    const t = now + idx * 0.07;
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(freq, t);
+                    gain.gain.setValueAtTime(0.22, t);
+                    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(t);
+                    osc.stop(t + 0.55);
+                });
+            }
+
+            playGameOver() {
+                if (!this.ctx) return;
+                const now = this.ctx.currentTime;
+                const notes = [220, 196, 174.6, 130.8];
+                notes.forEach((freq, idx) => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    const t = now + idx * 0.16;
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(freq, t);
+                    gain.gain.setValueAtTime(0.22, t);
+                    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(t);
+                    osc.stop(t + 0.4);
+                });
             }
         }
-    }
-});
 
-document.addEventListener("contextmenu",e=>{
-    e.preventDefault();
-});
+        const sfx = new SoundEffects();
 
-const keys = {};
+        /**
+         * ==========================================
+         * 2Dキャンバス初期化＆レイアウト計算
+         * ==========================================
+         */
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
 
-document.addEventListener("keydown",e=>{
-    keys[e.key.toLowerCase()] = true;
-});
+        let width = 0;
+        let height = 0;
+        let headCenterX = 0;
+        let headCenterY = 0;
+        let headRadiusX = 140;
+        let headRadiusY = 175;
 
-document.addEventListener("keyup",e=>{
-    keys[e.key.toLowerCase()] = false;
-});
+        function resizeCanvas() {
+            const dpr = Math.min(window.devicePixelRatio || 1, 2);
+            width = window.innerWidth;
+            height = window.innerHeight;
+            canvas.width = width * dpr;
+            canvas.height = height * dpr;
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-function animate(){
+            const minDim = Math.min(width, height);
+            headCenterX = width * 0.5;
+            headCenterY = height * 0.54;
+            headRadiusX = Math.max(115, Math.min(185, minDim * 0.28));
+            headRadiusY = headRadiusX * 1.24;
 
-    requestAnimationFrame(animate);
+            if (hairs.length > 0) {
+                repositionAllHairs();
+            }
+        }
 
-    const speed = 0.12;
+        window.addEventListener('resize', resizeCanvas);
 
-    if(keys["w"]) controls.moveForward(speed);
-    if(keys["s"]) controls.moveForward(-speed);
-    if(keys["a"]) controls.moveRight(-speed);
-    if(keys["d"]) controls.moveRight(speed);
+        /**
+         * ==========================================
+         * ゲーム状態・アップグレード変数
+         * ==========================================
+         */
+        const TOTAL_HAIRS = 10000;
+        let gameState = 'TITLE'; // 'TITLE', 'PLAYING', 'SHOP', 'CLEAR', 'GAMEOVER'
+        let remainingHairs = TOTAL_HAIRS;
+        let hairCurrency = 0; // 抜いた毛（通貨）
+        let bloodLevel = 0;
 
-    renderer.render(scene,camera);
-}
+        let timerStarted = false;
+        let startTime = 0;
+        let elapsedTime = 0;
+        let pausedDuration = 0;
+        let shopOpenedAt = 0;
 
-animate();
+        let combo = 0;
+        let maxCombo = 0;
+        let lastPluckTime = 0;
+        let painTimer = 0;
+        let screenShake = 0;
 
-window.addEventListener("resize",()=>{
-    camera.aspect = window.innerWidth/window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(
-        window.innerWidth,
-        window.innerHeight
-    );
-});
-</script>
+        // アップグレード状態
+        const upgrades = {
+            grab: { lv: 1, maxLv: 10, baseCost: 15, costStep: 15 },
+            shield: { lv: 1, maxLv: 10, baseCost: 20, costStep: 20 },
+            speed: { lv: 1, maxLv: 10, baseCost: 25, costStep: 25 },
+            heal: { cost: 30 }
+        };
 
+        function getGrabRadius() {
+            return 22 + (upgrades.grab.lv - 1) * 5.5;
+        }
+        function getBleedThreshold() {
+            return Math.min(0.95, 0.76 + (upgrades.shield.lv - 1) * 0.022);
+        }
+        function getBleedDamageMultiplier() {
+            return Math.max(0.25, 1.0 - (upgrades.shield.lv - 1) * 0.08);
+        }
+        function getRequiredPullDist() {
+            return Math.max(14, 42 - (upgrades.speed.lv - 1) * 3.0);
+        }
+
+        /**
+         * ==========================================
+         * しなやかな2D髪の毛（10,000本）＆空間グリッド検索
+         * ==========================================
+         */
+        let hairs = [];
+        const GRID_SIZE = 28;
+        let spatialGrid = new Map();
+
+        function rebuildSpatialGrid() {
+            spatialGrid.clear();
+            for (let i = 0; i < hairs.length; i++) {
+                const h = hairs[i];
+                if (!h.active) continue;
+                const gx = Math.floor(h.rootX / GRID_SIZE);
+                const gy = Math.floor(h.rootY / GRID_SIZE);
+                const key = `${gx},${gy}`;
+                let cell = spatialGrid.get(key);
+                if (!cell) {
+                    cell = [];
+                    spatialGrid.set(key, cell);
+                }
+                cell.push(h);
+            }
+        }
+
+        function generateHairs() {
+            hairs = [];
+            const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+
+            for (let i = 0; i < TOTAL_HAIRS; i++) {
+                // つむじを頭頂部やや右寄りに配置し、自然な毛流れを作る
+                const t = i / TOTAL_HAIRS;
+                const theta = i * goldenAngle;
+
+                // 頭皮エリア（おでこ〜頭頂〜側頭部にかけて人間らしい生え際を形成）
+                // 正規化座標 (nx, ny): 頭の中心を(0,0)、半径1.0の楕円内
+                const r = Math.pow(t, 0.56);
+                let nx = Math.cos(theta) * r * 0.98;
+                let ny = -0.36 + Math.sin(theta) * r * 0.68;
+
+                // おでこ（下側境界）のM字・自然な生え際カーブ調整
+                const foreheadLimit = -0.26 + Math.pow(Math.abs(nx), 1.8) * 0.34;
+                if (ny > foreheadLimit) {
+                    ny = foreheadLimit - Math.random() * 0.18;
+                }
+
+                // 頭頂部の丸みに収める
+                const distSq = nx * nx + (ny + 0.1) * (ny + 0.1);
+                if (distSq > 0.96) {
+                    const scale = 0.96 / Math.sqrt(distSq);
+                    nx *= scale;
+                    ny = (ny + 0.1) * scale - 0.1;
+                }
+
+                // 人間らしい毛流れ（ウニのように放射状ではなく、前髪は下へ、サイドは耳側へしなやかに流れる）
+                const flowAngle = Math.PI * 0.5 + nx * 0.65 + (Math.random() - 0.5) * 0.25;
+                const length = 26 + Math.random() * 22 + (1 - r) * 10;
+                const curveBend = (nx >= 0 ? 1 : -1) * (6 + Math.random() * 8);
+
+                // 髪の艶・色味の微妙なバリエーション
+                const shade = 18 + Math.floor(Math.random() * 22);
+                const color = `rgb(${shade}, ${shade}, ${shade + 4})`;
+
+                hairs.push({
+                    id: i,
+                    active: true,
+                    nx: nx,
+                    ny: ny,
+                    rootX: 0,
+                    rootY: 0,
+                    tipX: 0,
+                    tipY: 0,
+                    ctrlX: 0,
+                    ctrlY: 0,
+                    restTipX: 0,
+                    restTipY: 0,
+                    restCtrlX: 0,
+                    restCtrlY: 0,
+                    velTipX: 0,
+                    velTipY: 0,
+                    flowAngle: flowAngle,
+                    length: length,
+                    curveBend: curveBend,
+                    color: color,
+                    isGrabbed: false,
+                    isMoving: false
+                });
+            }
+
+            repositionAllHairs();
+        }
+
+        function repositionAllHairs() {
+            for (let i = 0; i < hairs.length; i++) {
+                const h = hairs[i];
+                h.rootX = headCenterX + h.nx * headRadiusX;
+                h.rootY = headCenterY + h.ny * headRadiusY;
+
+                // 自然にしなるベジェ曲線の制御点と毛先を計算
+                const endX = h.rootX + Math.cos(h.flowAngle) * h.length;
+                const endY = h.rootY + Math.sin(h.flowAngle) * h.length;
+
+                const midX = (h.rootX + endX) * 0.5 + h.curveBend;
+                const midY = (h.rootY + endY) * 0.5 + 3;
+
+                h.restTipX = endX;
+                h.restTipY = endY;
+                h.restCtrlX = midX;
+                h.restCtrlY = midY;
+
+                if (!h.isGrabbed && !h.isMoving) {
+                    h.tipX = endX;
+                    h.tipY = endY;
+                    h.ctrlX = midX;
+                    h.ctrlY = midY;
+                }
+            }
+            rebuildSpatialGrid();
+        }
+
+        // 指の位置に最も近い髪の毛を1本検索（空間グリッドで10,000本でも超高速）
+        function findClosestHair(px, py) {
+            const maxDist = getGrabRadius();
+            const maxDistSq = maxDist * maxDist;
+            const cellSpan = Math.ceil(maxDist / GRID_SIZE);
+            const cgx = Math.floor(px / GRID_SIZE);
+            const cgy = Math.floor(py / GRID_SIZE);
+
+            let bestHair = null;
+            let bestDistSq = maxDistSq;
+
+            for (let dx = -cellSpan; dx <= cellSpan; dx++) {
+                for (let dy = -cellSpan; dy <= cellSpan; dy++) {
+                    const cell = spatialGrid.get(`${cgx + dx},${cgy + dy}`);
+                    if (!cell) continue;
+                    for (let i = 0; i < cell.length; i++) {
+                        const h = cell[i];
+                        if (!h.active) continue;
+                        // 毛根と毛先の中間あたりを判定基準にする
+                        const targetX = (h.rootX + h.tipX) * 0.5;
+                        const targetY = (h.rootY + h.tipY) * 0.5;
+                        const dSq = (px - targetX) * (px - targetX) + (py - targetY) * (py - targetY);
+                        if (dSq < bestDistSq) {
+                            bestDistSq = dSq;
+                            bestHair = h;
+                        }
+                    }
+                }
+            }
+            return bestHair;
+        }
+
+        /**
+         * ==========================================
+         * 出血＆パーティクルエフェクト
+         * ==========================================
+         */
+        const bloodSpots = [];   // 頭皮に残る血痕
+        const bloodDrips = [];   // 顔を垂れる血の雫
+        const particles = [];    // 飛び散る血しぶき・毛・擬音
+
+        function spawnBloodEffect(x, y) {
+            bloodSpots.push({
+                nx: (x - headCenterX) / headRadiusX,
+                ny: (y - headCenterY) / headRadiusY,
+                r: 3 + Math.random() * 4
+            });
+
+            // 血しぶきパーティクル
+            for (let i = 0; i < 16; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const spd = 2 + Math.random() * 6;
+                particles.push({
+                    type: 'blood',
+                    x: x,
+                    y: y,
+                    vx: Math.cos(angle) * spd,
+                    vy: Math.sin(angle) * spd - 2,
+                    size: 2.5 + Math.random() * 3.5,
+                    life: 1.0
+                });
+            }
+
+            // 垂れる血の雫を追加
+            if (bloodDrips.length < 35) {
+                bloodDrips.push({
+                    nx: (x - headCenterX) / headRadiusX,
+                    ny: (y - headCenterY) / headRadiusY,
+                    len: 0,
+                    maxLen: 25 + Math.random() * 55,
+                    speed: 0.4 + Math.random() * 0.6
+                });
+            }
+
+            particles.push({
+                type: 'text',
+                text: 'ブチッ!!',
+                color: '#ff3b3b',
+                x: x,
+                y: y - 12,
+                vx: (Math.random() - 0.5) * 1.5,
+                vy: -2.2,
+                life: 1.0
+            });
+        }
+
+        function spawnPluckEffect(x, y, pullAngle) {
+            particles.push({
+                type: 'hair',
+                x: x,
+                y: y,
+                vx: Math.cos(pullAngle) * (3 + Math.random() * 3),
+                vy: Math.sin(pullAngle) * (3 + Math.random() * 3) - 2,
+                angle: pullAngle,
+                vAngle: (Math.random() - 0.5) * 0.3,
+                life: 1.0
+            });
+
+            const words = ['スポッ！', 'スッ！', 'プチッ！', '快感！'];
+            particles.push({
+                type: 'text',
+                text: words[Math.floor(Math.random() * words.length)],
+                color: '#fde047',
+                x: x + (Math.random() - 0.5) * 20,
+                y: y - 10,
+                vx: (Math.random() - 0.5) * 1.2,
+                vy: -1.8,
+                life: 0.85
+            });
+        }
+
+        /**
+         * ==========================================
+         * 強面（こわもて）キャラクター2D描画
+         * ==========================================
+         */
+        function drawToughGuyFace() {
+            const shakeX = screenShake > 0 ? (Math.random() - 0.5) * screenShake : 0;
+            const shakeY = screenShake > 0 ? (Math.random() - 0.5) * screenShake : 0;
+
+            ctx.save();
+            ctx.translate(headCenterX + shakeX, headCenterY + shakeY);
+
+            // 1. 首と黒いタンクトップ
+            ctx.fillStyle = '#c48660';
+            ctx.beginPath();
+            ctx.roundRect(-headRadiusX * 0.52, headRadiusY * 0.72, headRadiusX * 1.04, headRadiusY * 0.65, 20);
+            ctx.fill();
+
+            // 首の陰影
+            ctx.fillStyle = 'rgba(80, 35, 15, 0.25)';
+            ctx.beginPath();
+            ctx.ellipse(0, headRadiusY * 0.92, headRadiusX * 0.45, headRadiusY * 0.18, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // タンクトップ
+            ctx.fillStyle = '#181a24';
+            ctx.beginPath();
+            ctx.ellipse(0, headRadiusY * 1.48, headRadiusX * 1.25, headRadiusY * 0.55, 0, Math.PI, Math.PI * 2);
+            ctx.fill();
+
+            // 2. 両耳
+            ctx.fillStyle = '#cf916a';
+            ctx.strokeStyle = '#8c5332';
+            ctx.lineWidth = 2.5;
+            [-1, 1].forEach(side => {
+                ctx.beginPath();
+                ctx.ellipse(side * headRadiusX * 0.98, headRadiusY * 0.08, headRadiusX * 0.14, headRadiusY * 0.22, side * 0.15, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+            });
+
+            // 3. エラの張った強面輪郭（グラデーション立体塗り）
+            const skinGrad = ctx.createRadialGradient(
+                -headRadiusX * 0.2, -headRadiusY * 0.35, headRadiusX * 0.1,
+                0, 0, headRadiusY * 1.15
+            );
+            skinGrad.addColorStop(0, '#eab28e');
+            skinGrad.addColorStop(0.65, '#d6946c');
+            skinGrad.addColorStop(1, '#a86743');
+
+            ctx.fillStyle = skinGrad;
+            ctx.strokeStyle = '#7a4427';
+            ctx.lineWidth = 3;
+
+            ctx.beginPath();
+            ctx.moveTo(0, -headRadiusY);
+            // 右側頭部〜頬〜エラ〜顎
+            ctx.bezierCurveTo(headRadiusX * 0.85, -headRadiusY, headRadiusX * 1.02, -headRadiusY * 0.35, headRadiusX * 0.96, headRadiusY * 0.15);
+            ctx.quadraticCurveTo(headRadiusX * 0.95, headRadiusY * 0.62, headRadiusX * 0.55, headRadiusY * 0.88);
+            ctx.quadraticCurveTo(0, headRadiusY * 1.06, -headRadiusX * 0.55, headRadiusY * 0.88);
+            ctx.quadraticCurveTo(-headRadiusX * 0.95, headRadiusY * 0.62, -headRadiusX * 0.96, headRadiusY * 0.15);
+            ctx.bezierCurveTo(-headRadiusX * 1.02, -headRadiusY * 0.35, -headRadiusX * 0.85, -headRadiusY, 0, -headRadiusY);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // 4. 髪が減るほど輝く頭頂部のツヤ（ピカピカ演出）
+            const baldRatio = 1 - (remainingHairs / TOTAL_HAIRS);
+            if (baldRatio > 0.05) {
+                ctx.save();
+                ctx.globalAlpha = Math.min(0.75, baldRatio * 0.85);
+                const shineGrad = ctx.createRadialGradient(
+                    -headRadiusX * 0.25, -headRadiusY * 0.55, 2,
+                    -headRadiusX * 0.25, -headRadiusY * 0.55, headRadiusX * 0.55
+                );
+                shineGrad.addColorStop(0, '#ffffff');
+                shineGrad.addColorStop(0.4, 'rgba(255, 255, 255, 0.45)');
+                shineGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                ctx.fillStyle = shineGrad;
+                ctx.beginPath();
+                ctx.ellipse(-headRadiusX * 0.22, -headRadiusY * 0.52, headRadiusX * 0.45, headRadiusY * 0.25, -0.3, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+
+            // 5. 顔パーツ（眉間のシワ・怒り眉・三白眼・鷲鼻・古傷・無精ヒゲ・への字口）
+            const isPain = painTimer > 0;
+
+            // 眉間のシワ
+            ctx.strokeStyle = '#8c4e2e';
+            ctx.lineWidth = 2.2;
+            ctx.beginPath();
+            ctx.moveTo(-8, -headRadiusY * 0.08);
+            ctx.lineTo(-5, headRadiusY * 0.04);
+            ctx.moveTo(8, -headRadiusY * 0.08);
+            ctx.lineTo(5, headRadiusY * 0.04);
+            ctx.stroke();
+
+            // 目（痛がっている時はギュッと閉じる）
+            [-1, 1].forEach(side => {
+                const ex = side * headRadiusX * 0.36;
+                const ey = headRadiusY * 0.06;
+
+                if (isPain) {
+                    // 痛がり目（＞ ＜）
+                    ctx.strokeStyle = '#3b1d12';
+                    ctx.lineWidth = 3.5;
+                    ctx.beginPath();
+                    ctx.moveTo(ex - side * 14, ey - 8);
+                    ctx.lineTo(ex + side * 8, ey);
+                    ctx.lineTo(ex - side * 14, ey + 8);
+                    ctx.stroke();
+                } else {
+                    // 鋭い三白眼
+                    ctx.fillStyle = '#f8fafc';
+                    ctx.beginPath();
+                    ctx.ellipse(ex, ey, 16, 9, side * -0.15, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.strokeStyle = '#3b1d12';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+
+                    // 小さめの黒目
+                    ctx.fillStyle = '#111827';
+                    ctx.beginPath();
+                    ctx.arc(ex - side * 2, ey - 1, 5.2, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                // 極太の怒り眉
+                ctx.fillStyle = '#18181b';
+                ctx.beginPath();
+                const browOffsetY = isPain ? 4 : 0;
+                ctx.moveTo(ex - side * 22, ey - 16 + browOffsetY);
+                ctx.lineTo(ex + side * 20, ey - 9 + browOffsetY);
+                ctx.lineTo(ex + side * 18, ey - 2 + browOffsetY);
+                ctx.lineTo(ex - side * 20, ey - 8 + browOffsetY);
+                ctx.closePath();
+                ctx.fill();
+            });
+
+            // 鷲鼻（わしばな）
+            ctx.strokeStyle = '#8c4e2e';
+            ctx.lineWidth = 2.8;
+            ctx.beginPath();
+            ctx.moveTo(-4, headRadiusY * 0.08);
+            ctx.lineTo(-9, headRadiusY * 0.34);
+            ctx.quadraticCurveTo(0, headRadiusY * 0.40, 10, headRadiusY * 0.34);
+            ctx.stroke();
+
+            // 右頬の古傷
+            ctx.strokeStyle = '#9e473b';
+            ctx.lineWidth = 2.2;
+            ctx.beginPath();
+            ctx.moveTo(headRadiusX * 0.42, headRadiusY * 0.22);
+            ctx.lineTo(headRadiusX * 0.64, headRadiusY * 0.38);
+            ctx.moveTo(headRadiusX * 0.48, headRadiusY * 0.21);
+            ctx.lineTo(headRadiusX * 0.43, headRadiusY * 0.28);
+            ctx.moveTo(headRadiusX * 0.58, headRadiusY * 0.29);
+            ctx.lineTo(headRadiusX * 0.53, headRadiusY * 0.36);
+            ctx.stroke();
+
+            // 無精ヒゲ（顎周り）
+            ctx.fillStyle = 'rgba(30, 30, 35, 0.38)';
+            for (let i = 0; i < 45; i++) {
+                const bx = ((i * 37) % 100 - 50) * 0.014 * headRadiusX;
+                const by = headRadiusY * (0.56 + ((i * 53) % 34) * 0.01);
+                ctx.fillRect(bx, by, 2, 2);
+            }
+
+            // 口（痛がっている時は歯を食いしばる、通常はへの字）
+            if (isPain) {
+                ctx.fillStyle = '#450a0a';
+                ctx.strokeStyle = '#290d09';
+                ctx.lineWidth = 2.5;
+                ctx.beginPath();
+                ctx.roundRect(-24, headRadiusY * 0.52, 48, 16, 6);
+                ctx.fill();
+                ctx.stroke();
+
+                // 食いしばった歯
+                ctx.fillStyle = '#f8fafc';
+                ctx.fillRect(-20, headRadiusY * 0.53, 40, 6);
+                ctx.fillRect(-20, headRadiusY * 0.53 + 8, 40, 6);
+            } else {
+                ctx.strokeStyle = '#4a2114';
+                ctx.lineWidth = 3.8;
+                ctx.lineCap = 'round';
+                ctx.beginPath();
+                ctx.moveTo(-26, headRadiusY * 0.62);
+                ctx.quadraticCurveTo(0, headRadiusY * 0.50, 26, headRadiusY * 0.62);
+                ctx.stroke();
+            }
+
+            ctx.restore();
+        }
+
+        /**
+         * ==========================================
+         * しなやかな10,000本の髪の毛の描画＆物理更新
+         * ==========================================
+         */
+        function updateAndDrawHairs() {
+            ctx.lineCap = 'round';
+
+            // 1. 掴まれていない通常毛を効率よく描画
+            for (let i = 0; i < hairs.length; i++) {
+                const h = hairs[i];
+                if (!h.active || h.isGrabbed) continue;
+
+                // 弾かれた後のしなり戻り物理
+                if (h.isMoving) {
+                    const dx = h.restTipX - h.tipX;
+                    const dy = h.restTipY - h.tipY;
+                    h.velTipX = (h.velTipX + dx * 0.25) * 0.72;
+                    h.velTipY = (h.velTipY + dy * 0.25) * 0.72;
+                    h.tipX += h.velTipX;
+                    h.tipY += h.velTipY;
+                    h.ctrlX = (h.rootX + h.tipX) * 0.5 + h.curveBend;
+                    h.ctrlY = (h.rootY + h.tipY) * 0.5 + 3;
+
+                    if (Math.abs(dx) < 0.2 && Math.abs(dy) < 0.2 && Math.abs(h.velTipX) < 0.1) {
+                        h.tipX = h.restTipX;
+                        h.tipY = h.restTipY;
+                        h.ctrlX = h.restCtrlX;
+                        h.ctrlY = h.restCtrlY;
+                        h.isMoving = false;
+                    }
+                }
+
+                ctx.strokeStyle = h.color;
+                ctx.lineWidth = 1.35;
+                ctx.beginPath();
+                ctx.moveTo(h.rootX, h.rootY);
+                ctx.quadraticCurveTo(h.ctrlX, h.ctrlY, h.tipX, h.tipY);
+                ctx.stroke();
+            }
+
+            // 2. 現在指で掴んで引っ張っている毛を最前面に強調描画
+            if (pointerState.grabbedHair && pointerState.grabbedHair.active) {
+                const gh = pointerState.grabbedHair;
+                // 毛根の赤み強調
+                ctx.fillStyle = 'rgba(239, 68, 68, 0.75)';
+                ctx.beginPath();
+                ctx.arc(gh.rootX, gh.rootY, 3.5, 0, Math.PI * 2);
+                ctx.fill();
+
+                // しなって伸びる髪の毛本体
+                ctx.strokeStyle = '#fbbf24';
+                ctx.lineWidth = 3.2;
+                ctx.beginPath();
+                ctx.moveTo(gh.rootX, gh.rootY);
+                ctx.quadraticCurveTo(gh.ctrlX, gh.ctrlY, gh.tipX, gh.tipY);
+                ctx.stroke();
+
+                ctx.strokeStyle = '#111111';
+                ctx.lineWidth = 1.8;
+                ctx.beginPath();
+                ctx.moveTo(gh.rootX, gh.rootY);
+                ctx.quadraticCurveTo(gh.ctrlX, gh.ctrlY, gh.tipX, gh.tipY);
+                ctx.stroke();
+            }
+        }
+
+        function drawBloodAndParticles() {
+            // 頭皮の血痕
+            ctx.fillStyle = '#b91c1c';
+            for (let i = 0; i < bloodSpots.length; i++) {
+                const s = bloodSpots[i];
+                const bx = headCenterX + s.nx * headRadiusX;
+                const by = headCenterY + s.ny * headRadiusY;
+                ctx.beginPath();
+                ctx.arc(bx, by, s.r, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // 垂れる血の雫
+            ctx.strokeStyle = '#991b1b';
+            ctx.lineWidth = 3;
+            ctx.lineCap = 'round';
+            for (let i = 0; i < bloodDrips.length; i++) {
+                const d = bloodDrips[i];
+                if (d.len < d.maxLen) d.len += d.speed;
+                const sx = headCenterX + d.nx * headRadiusX;
+                const sy = headCenterY + d.ny * headRadiusY;
+                ctx.beginPath();
+                ctx.moveTo(sx, sy);
+                ctx.lineTo(sx, sy + d.len);
+                ctx.stroke();
+            }
+
+            // 飛び散る血しぶき・抜けた毛・擬音テキスト
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.life -= 0.032;
+
+                if (p.life <= 0) {
+                    particles.splice(i, 1);
+                    continue;
+                }
+
+                ctx.save();
+                ctx.globalAlpha = Math.max(0, p.life);
+                if (p.type === 'blood') {
+                    p.vy += 0.25;
+                    ctx.fillStyle = '#dc2626';
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                    ctx.fill();
+                } else if (p.type === 'hair') {
+                    p.vy += 0.18;
+                    p.angle += p.vAngle;
+                    ctx.translate(p.x, p.y);
+                    ctx.rotate(p.angle);
+                    ctx.strokeStyle = '#18181b';
+                    ctx.lineWidth = 1.8;
+                    ctx.beginPath();
+                    ctx.moveTo(-12, 0);
+                    ctx.quadraticCurveTo(0, -4, 12, 0);
+                    ctx.stroke();
+                } else if (p.type === 'text') {
+                    ctx.font = '900 16px "M PLUS Rounded 1c", sans-serif';
+                    ctx.strokeStyle = '#000000';
+                    ctx.lineWidth = 3.5;
+                    ctx.strokeText(p.text, p.x, p.y);
+                    ctx.fillStyle = p.color;
+                    ctx.fillText(p.text, p.x, p.y);
+                }
+                ctx.restore();
+            }
+        }
+
+        /**
+         * ==========================================
+         * UI更新＆アップグレードショップ制御
+         * ==========================================
+         */
+        const titleScreen = document.getElementById('titleScreen');
+        const resultScreen = document.getElementById('resultScreen');
+        const gameOverScreen = document.getElementById('gameOverScreen');
+        const shopModal = document.getElementById('shopModal');
+        const hud = document.getElementById('hud');
+        const bottomControls = document.getElementById('bottomControls');
+        const remainCountEl = document.getElementById('remainCount');
+        const hairCurrencyEl = document.getElementById('hairCurrency');
+        const timerDisplayEl = document.getElementById('timerDisplay');
+        const comboBoxEl = document.getElementById('comboBox');
+        const comboCountEl = document.getElementById('comboCount');
+        const bloodBarFill = document.getElementById('bloodBarFill');
+        const bloodPercentText = document.getElementById('bloodPercentText');
+        const bloodVignette = document.getElementById('bloodVignette');
+        const powerMeterBox = document.getElementById('powerMeterBox');
+        const powerBarFill = document.getElementById('powerBarFill');
+        const powerLabel = document.getElementById('powerLabel');
+
+        function updateBestTimeDisplay() {
+            const best = localStorage.getItem('hair2d_best_10k');
+            document.getElementById('bestTimeDisplay').textContent = best ? `${parseFloat(best).toFixed(2)} 秒` : '--.-- 秒';
+        }
+
+        function updateCurrencyAndShopUI() {
+            hairCurrencyEl.textContent = hairCurrency.toLocaleString();
+            document.getElementById('shopCurrencyDisplay').textContent = hairCurrency.toLocaleString();
+
+            const grabCost = upgrades.grab.baseCost + (upgrades.grab.lv - 1) * upgrades.grab.costStep;
+            const shieldCost = upgrades.shield.baseCost + (upgrades.shield.lv - 1) * upgrades.shield.costStep;
+            const speedCost = upgrades.speed.baseCost + (upgrades.speed.lv - 1) * upgrades.speed.costStep;
+            const healCost = upgrades.heal.cost;
+
+            document.getElementById('upgGrabLv').textContent = upgrades.grab.lv >= upgrades.grab.maxLv ? 'MAX' : `Lv.${upgrades.grab.lv}`;
+            document.getElementById('costGrab').textContent = upgrades.grab.lv >= upgrades.grab.maxLv ? 'MAX' : `${grabCost} 本`;
+            document.getElementById('buyGrabBtn').disabled = upgrades.grab.lv >= upgrades.grab.maxLv || hairCurrency < grabCost;
+
+            document.getElementById('upgShieldLv').textContent = upgrades.shield.lv >= upgrades.shield.maxLv ? 'MAX' : `Lv.${upgrades.shield.lv}`;
+            document.getElementById('costShield').textContent = upgrades.shield.lv >= upgrades.shield.maxLv ? 'MAX' : `${shieldCost} 本`;
+            document.getElementById('buyShieldBtn').disabled = upgrades.shield.lv >= upgrades.shield.maxLv || hairCurrency < shieldCost;
+
+            document.getElementById('upgSpeedLv').textContent = upgrades.speed.lv >= upgrades.speed.maxLv ? 'MAX' : `Lv.${upgrades.speed.lv}`;
+            document.getElementById('costSpeed').textContent = upgrades.speed.lv >= upgrades.speed.maxLv ? 'MAX' : `${speedCost} 本`;
+            document.getElementById('buySpeedBtn').disabled = upgrades.speed.lv >= upgrades.speed.maxLv || hairCurrency < speedCost;
+
+            document.getElementById('costHeal').textContent = `${healCost} 本`;
+            document.getElementById('buyHealBtn').disabled = hairCurrency < healCost || bloodLevel <= 0;
+
+            // 購入可能なアイテムがあればバッジを表示
+            const canBuyAny = (upgrades.grab.lv < upgrades.grab.maxLv && hairCurrency >= grabCost) ||
+                              (upgrades.shield.lv < upgrades.shield.maxLv && hairCurrency >= shieldCost) ||
+                              (upgrades.speed.lv < upgrades.speed.maxLv && hairCurrency >= speedCost) ||
+                              (bloodLevel > 0 && hairCurrency >= healCost);
+            document.getElementById('shopBadge').classList.toggle('hidden', !canBuyAny);
+        }
+
+        function updateBloodUI() {
+            const pct = Math.min(100, Math.round(bloodLevel));
+            bloodBarFill.style.width = `${pct}%`;
+            bloodPercentText.textContent = `${pct}%`;
+
+            if (pct > 0) {
+                const alpha = Math.min(0.65, (pct / 100) * 0.7);
+                bloodVignette.style.boxShadow = `inset 0 0 ${40 + pct}px rgba(220, 10, 10, ${alpha})`;
+            } else {
+                bloodVignette.style.boxShadow = 'none';
+            }
+        }
+
+        function openShop() {
+            if (gameState !== 'PLAYING') return;
+            gameState = 'SHOP';
+            if (timerStarted) {
+                shopOpenedAt = performance.now();
+            }
+            updateCurrencyAndShopUI();
+            shopModal.classList.remove('hidden');
+        }
+
+        function closeShop() {
+            if (gameState !== 'SHOP') return;
+            if (timerStarted && shopOpenedAt > 0) {
+                pausedDuration += performance.now() - shopOpenedAt;
+                shopOpenedAt = 0;
+            }
+            shopModal.classList.add('hidden');
+            gameState = 'PLAYING';
+        }
+
+        function buyUpgrade(type) {
+            if (type === 'grab') {
+                const cost = upgrades.grab.baseCost + (upgrades.grab.lv - 1) * upgrades.grab.costStep;
+                if (upgrades.grab.lv < upgrades.grab.maxLv && hairCurrency >= cost) {
+                    hairCurrency -= cost;
+                    upgrades.grab.lv++;
+                    sfx.playUpgrade();
+                }
+            } else if (type === 'shield') {
+                const cost = upgrades.shield.baseCost + (upgrades.shield.lv - 1) * upgrades.shield.costStep;
+                if (upgrades.shield.lv < upgrades.shield.maxLv && hairCurrency >= cost) {
+                    hairCurrency -= cost;
+                    upgrades.shield.lv++;
+                    sfx.playUpgrade();
+                }
+            } else if (type === 'speed') {
+                const cost = upgrades.speed.baseCost + (upgrades.speed.lv - 1) * upgrades.speed.costStep;
+                if (upgrades.speed.lv < upgrades.speed.maxLv && hairCurrency >= cost) {
+                    hairCurrency -= cost;
+                    upgrades.speed.lv++;
+                    sfx.playUpgrade();
+                }
+            } else if (type === 'heal') {
+                const cost = upgrades.heal.cost;
+                if (hairCurrency >= cost && bloodLevel > 0) {
+                    hairCurrency -= cost;
+                    bloodLevel = Math.max(0, bloodLevel - 50);
+                    bloodDrips.length = 0;
+                    updateBloodUI();
+                    sfx.playUpgrade();
+                }
+            }
+            updateCurrencyAndShopUI();
+        }
+
+        document.getElementById('openShopBtn').addEventListener('click', openShop);
+        document.getElementById('inGameRetryBtn').addEventListener('click', startGame);
+
+        /**
+         * ==========================================
+         * ゲーム進行＆1本ずつ抜去判定ロジック
+         * ==========================================
+         */
+        function startGame() {
+            sfx.init();
+            remainingHairs = TOTAL_HAIRS;
+            hairCurrency = 0;
+            bloodLevel = 0;
+
+            upgrades.grab.lv = 1;
+            upgrades.shield.lv = 1;
+            upgrades.speed.lv = 1;
+
+            bloodSpots.length = 0;
+            bloodDrips.length = 0;
+            particles.length = 0;
+
+            gameState = 'PLAYING';
+            timerStarted = false;
+            elapsedTime = 0;
+            pausedDuration = 0;
+            combo = 0;
+            maxCombo = 0;
+            painTimer = 0;
+            screenShake = 0;
+
+            generateHairs();
+            updateBloodUI();
+            updateCurrencyAndShopUI();
+
+            titleScreen.classList.add('hidden');
+            resultScreen.classList.add('hidden');
+            gameOverScreen.classList.add('hidden');
+            shopModal.classList.add('hidden');
+            hud.classList.remove('hidden');
+            bottomControls.classList.remove('hidden');
+            comboBoxEl.classList.add('opacity-0');
+            powerMeterBox.classList.add('opacity-0');
+
+            remainCountEl.textContent = remainingHairs.toLocaleString();
+            timerDisplayEl.innerHTML = `0.00<span class="text-xs ml-0.5 text-gray-400">秒</span>`;
+        }
+
+        function backToTitle() {
+            gameState = 'TITLE';
+            hud.classList.add('hidden');
+            bottomControls.classList.add('hidden');
+            resultScreen.classList.add('hidden');
+            gameOverScreen.classList.add('hidden');
+            shopModal.classList.add('hidden');
+            titleScreen.classList.remove('hidden');
+            bloodLevel = 0;
+            updateBloodUI();
+            generateHairs();
+            updateBestTimeDisplay();
+        }
+
+        function executePluck(hair, pullForce, pullAngle) {
+            if (!hair || !hair.active) return;
+
+            if (!timerStarted) {
+                timerStarted = true;
+                startTime = performance.now();
+            }
+
+            // 必ず1本ずつ抜ける
+            hair.active = false;
+            hair.isGrabbed = false;
+            remainingHairs--;
+            hairCurrency++;
+
+            remainCountEl.textContent = remainingHairs.toLocaleString();
+            updateCurrencyAndShopUI();
+
+            const bleedThreshold = getBleedThreshold();
+
+            if (pullForce > bleedThreshold) {
+                // 力が大きすぎて出血！
+                const rawDamage = 12 + (pullForce - bleedThreshold) * 40;
+                const finalDamage = rawDamage * getBleedDamageMultiplier();
+                bloodLevel = Math.min(100, bloodLevel + finalDamage);
+                updateBloodUI();
+                updateCurrencyAndShopUI();
+
+                sfx.playBleed();
+                spawnBloodEffect(hair.rootX, hair.rootY);
+                painTimer = 0.45;
+                screenShake = 10;
+                combo = 0;
+                comboBoxEl.classList.add('opacity-0');
+
+                if (bloodLevel >= 100) {
+                    triggerGameOver();
+                    return;
+                }
+            } else {
+                // 絶妙な力加減で1本快感抜去！
+                const now = performance.now();
+                if (now - lastPluckTime < 1100) {
+                    combo++;
+                } else {
+                    combo = 1;
+                }
+                lastPluckTime = now;
+                if (combo > maxCombo) maxCombo = combo;
+
+                if (combo >= 2) {
+                    comboCountEl.textContent = `${combo} COMBO!`;
+                    comboBoxEl.classList.remove('opacity-0');
+                }
+
+                sfx.playPluck(combo);
+                spawnPluckEffect(hair.rootX, hair.rootY, pullAngle);
+                painTimer = 0.16;
+                screenShake = 3;
+            }
+
+            if (remainingHairs <= 0) {
+                finishGame();
+            }
+        }
+
+        function triggerGameOver() {
+            gameState = 'GAMEOVER';
+            pointerState.grabbedHair = null;
+            powerMeterBox.classList.add('opacity-0');
+            hud.classList.add('hidden');
+            bottomControls.classList.add('hidden');
+            sfx.playGameOver();
+
+            document.getElementById('gameOverRemain').textContent = remainingHairs.toLocaleString();
+            gameOverScreen.classList.remove('hidden');
+        }
+
+        function finishGame() {
+            gameState = 'CLEAR';
+            pointerState.grabbedHair = null;
+            powerMeterBox.classList.add('opacity-0');
+            elapsedTime = (performance.now() - startTime - pausedDuration) / 1000;
+            timerDisplayEl.innerHTML = `${elapsedTime.toFixed(2)}<span class="text-xs ml-0.5 text-gray-400">秒</span>`;
+
+            sfx.playClear();
+            bottomControls.classList.add('hidden');
+            comboBoxEl.classList.add('opacity-0');
+
+            const storageKey = 'hair2d_best_10k';
+            const prevBest = localStorage.getItem(storageKey);
+            let isNewRecord = false;
+            if (!prevBest || elapsedTime < parseFloat(prevBest)) {
+                localStorage.setItem(storageKey, elapsedTime.toFixed(2));
+                isNewRecord = true;
+            }
+
+            setTimeout(() => {
+                document.getElementById('finalTime').innerHTML = `${elapsedTime.toFixed(2)}<span class="text-xl text-gray-400 ml-1">秒</span>`;
+                document.getElementById('finalMaxCombo').textContent = maxCombo;
+                document.getElementById('finalBlood').textContent = `${Math.round(bloodLevel)}%`;
+
+                const badge = document.getElementById('newRecordBadge');
+                if (isNewRecord) badge.classList.remove('hidden');
+                else badge.classList.add('hidden');
+
+                resultScreen.classList.remove('hidden');
+            }, 800);
+        }
+
+        /**
+         * ==========================================
+         * タッチ＆マウス スワイプ操作（1本ずつ精密抜去）
+         * ==========================================
+         */
+        const pointerState = {
+            isDown: false,
+            x: 0,
+            y: 0,
+            prevX: 0,
+            prevY: 0,
+            startX: 0,
+            startY: 0,
+            grabbedHair: null,
+            smoothedSpeed: 0
+        };
+
+        function handlePointerDown(x, y) {
+            if (gameState !== 'PLAYING') return;
+            sfx.init();
+
+            pointerState.isDown = true;
+            pointerState.x = x;
+            pointerState.y = y;
+            pointerState.prevX = x;
+            pointerState.prevY = y;
+            pointerState.startX = x;
+            pointerState.startY = y;
+            pointerState.smoothedSpeed = 0;
+
+            const hit = findClosestHair(x, y);
+            if (hit) {
+                hit.isGrabbed = true;
+                pointerState.grabbedHair = hit;
+                powerMeterBox.classList.remove('opacity-0');
+
+                if (!timerStarted) {
+                    timerStarted = true;
+                    startTime = performance.now();
+                }
+            }
+        }
+
+        function handlePointerMove(x, y) {
+            if (!pointerState.isDown || gameState !== 'PLAYING') return;
+
+            const dx = x - pointerState.prevX;
+            const dy = y - pointerState.prevY;
+            const instSpeed = Math.hypot(dx, dy);
+
+            pointerState.smoothedSpeed = pointerState.smoothedSpeed * 0.65 + instSpeed * 0.35;
+            pointerState.prevX = x;
+            pointerState.prevY = y;
+            pointerState.x = x;
+            pointerState.y = y;
+
+            // 指を離さずに連続スワイプしている時、次の1本をキャッチ
+            if (!pointerState.grabbedHair) {
+                const nextHit = findClosestHair(x, y);
+                if (nextHit) {
+                    nextHit.isGrabbed = true;
+                    pointerState.grabbedHair = nextHit;
+                    pointerState.startX = x;
+                    pointerState.startY = y;
+                    powerMeterBox.classList.remove('opacity-0');
+                }
+            }
+
+            const gh = pointerState.grabbedHair;
+            if (gh && gh.active) {
+                const pullDx = x - pointerState.startX;
+                const pullDy = y - pointerState.startY;
+                const pullDist = Math.hypot(pullDx, pullDy);
+                const pullAngle = Math.atan2(pullDy, pullDx);
+
+                // しなやかにベジェ曲線で引っ張られる表現
+                gh.tipX = x;
+                gh.tipY = y;
+                gh.ctrlX = gh.rootX + pullDx * 0.35 + gh.curveBend * 0.5;
+                gh.ctrlY = gh.rootY + pullDy * 0.35;
+
+                const forceNormalized = Math.min(1.0, pointerState.smoothedSpeed / 28);
+                const bleedThreshold = getBleedThreshold();
+
+                powerBarFill.style.width = `${Math.round(forceNormalized * 100)}%`;
+
+                if (forceNormalized < 0.20) {
+                    powerBarFill.className = 'h-full bg-blue-400 transition-all duration-75';
+                    powerLabel.textContent = '弱すぎる！スッと引け';
+                    powerLabel.className = 'text-[10px] font-bold text-blue-300 mb-0.5';
+                } else if (forceNormalized > bleedThreshold) {
+                    powerBarFill.className = 'h-full bg-red-500 transition-all duration-75';
+                    powerLabel.textContent = '⚠️ 強すぎる！出血するぞ！';
+                    powerLabel.className = 'text-[10px] font-black text-red-400 mb-0.5';
+                } else {
+                    powerBarFill.className = 'h-full bg-emerald-400 transition-all duration-75';
+                    powerLabel.textContent = '✨ 絶妙な力加減！';
+                    powerLabel.className = 'text-[10px] font-bold text-emerald-300 mb-0.5';
+                }
+
+                // 必要引き距離に達したら抜去判定
+                if (pullDist >= getRequiredPullDist()) {
+                    if (forceNormalized < 0.20) {
+                        // 弱すぎて指が滑って抜けない（プルンと元に戻る）
+                        sfx.playSlip();
+                        gh.isGrabbed = false;
+                        gh.isMoving = true;
+                        pointerState.grabbedHair = null;
+                    } else {
+                        executePluck(gh, forceNormalized, pullAngle);
+                        pointerState.grabbedHair = null;
+                    }
+                }
+            }
+        }
+
+        function handlePointerUp() {
+            if (!pointerState.isDown) return;
+            pointerState.isDown = false;
+            powerMeterBox.classList.add('opacity-0');
+
+            if (pointerState.grabbedHair) {
+                pointerState.grabbedHair.isGrabbed = false;
+                pointerState.grabbedHair.isMoving = true;
+                pointerState.grabbedHair = null;
+            }
+        }
+
+        canvas.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            handlePointerDown(e.clientX, e.clientY);
+        });
+        window.addEventListener('mousemove', (e) => {
+            handlePointerMove(e.clientX, e.clientY);
+        });
+        window.addEventListener('mouseup', handlePointerUp);
+
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            if (e.touches.length > 0) {
+                handlePointerDown(e.touches[0].clientX, e.touches[0].clientY);
+            }
+        }, { passive: false });
+
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            if (e.touches.length > 0) {
+                handlePointerMove(e.touches[0].clientX, e.touches[0].clientY);
+            }
+        }, { passive: false });
+
+        window.addEventListener('touchend', handlePointerUp);
+        window.addEventListener('touchcancel', handlePointerUp);
+
+        /**
+         * ==========================================
+         * メインアニメーションループ
+         * ==========================================
+         */
+        let lastFrameTime = performance.now();
+
+        function animate(now) {
+            requestAnimationFrame(animate);
+            const dt = (now - lastFrameTime) / 1000;
+            lastFrameTime = now;
+
+            if (gameState === 'PLAYING' && timerStarted) {
+                elapsedTime = (now - startTime - pausedDuration) / 1000;
+                timerDisplayEl.innerHTML = `${elapsedTime.toFixed(2)}<span class="text-xs ml-0.5 text-gray-400">秒</span>`;
+            }
+
+            if (combo >= 2 && now - lastPluckTime > 1100) {
+                combo = 0;
+                comboBoxEl.classList.add('opacity-0');
+            }
+
+            if (painTimer > 0) painTimer -= dt;
+            if (screenShake > 0) screenShake = Math.max(0, screenShake - dt * 45);
+
+            // 背景クリア
+            ctx.clearRect(0, 0, width, height);
+
+            // 強面キャラクターの顔を描画
+            drawToughGuyFace();
+
+            // 10,000本のしなやかな髪の毛を描画
+            updateAndDrawHairs();
+
+            // 出血＆パーティクル描画
+            drawBloodAndParticles();
+        }
+
+        window.onload = function () {
+            resizeCanvas();
+            updateBestTimeDisplay();
+            generateHairs();
+            requestAnimationFrame(animate);
+        };
+    </script>
 </body>
 </html>
