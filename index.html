@@ -18,6 +18,11 @@
             -webkit-touch-callout: none;
         }
 
+             input {
+            user-select: auto;
+            -webkit-user-select: auto;
+        }
+
         html, body {
             margin: 0;
             padding: 0;
@@ -202,8 +207,16 @@
     <!-- タイトル画面 -->
     <div id="titleScreen" class="absolute inset-0 bg-black/55 backdrop-blur-xs flex flex-col items-center justify-center p-4 z-30">
         <div class="bg-gray-900/95 border-4 border-orange-500 rounded-3xl p-6 sm:p-8 max-w-md w-full text-center shadow-2xl text-white">
-            <div class="inline-block bg-orange-500/20 border border-orange-400 text-orange-300 font-black text-xs px-3 py-1 rounded-full mb-2">
+            <!-- ▼ 11回タップできるボタンに変更 -->
+            <div onclick="tapSecretBadge()" class="cursor-pointer active:scale-95 transition-transform inline-block bg-orange-500/20 border border-orange-400 text-orange-300 font-black text-xs px-3 py-1 rounded-full mb-2">
                 プチっと爽快！
+            </div>
+            <!-- ▼ 11回タップすると現れる秘密のパスワード入力欄（最初は hidden で隠れている） -->
+            <div id="secretBox" class="hidden mb-3 bg-black/80 border border-red-500/70 rounded-xl p-2.5 flex items-center justify-center gap-2">
+                <input id="secretInput" type="text" placeholder="パスワードを入力..." class="bg-gray-800 text-white text-xs sm:text-sm font-bold px-3 py-1.5 rounded-lg border border-gray-600 focus:outline-none focus:border-red-500 w-36 text-center">
+                <button onclick="checkSecretPassword()" class="bg-red-600 hover:bg-red-500 text-white font-black text-xs px-3 py-1.5 rounded-lg">
+                    解除
+                </button>
             </div>
             <h1 class="text-2xl sm:text-4xl font-black tracking-tight mb-2 leading-tight">
                 10,000本の<br>
@@ -437,7 +450,7 @@
         /**
          * ゲーム状態・アップグレード変数
          */
-        const TOTAL_HAIRS = 10000;
+        let TOTAL_HAIRS = 10000;
         let gameState = 'TITLE';
         let remainingHairs = TOTAL_HAIRS;
         let hairCurrency = 0;
@@ -1163,6 +1176,36 @@
         /**
          * ゲーム進行＆抜去判定
          */
+        function tapSecretBadge() {
+            sfx.init();
+            secretTapCount++;
+            sfx.playPluck(secretTapCount); // タップするたびに「スポッ！」と音が鳴る
+
+            // 11回タップされたら入力欄を表示！
+            if (secretTapCount === 11) {
+                document.getElementById('secretBox').classList.remove('hidden');
+                document.getElementById('secretInput').focus();
+                sfx.playUpgrade();
+            }
+        }
+
+        function checkSecretPassword() {
+            const inputVal = document.getElementById('secretInput').value.trim();
+
+            // パスワードが「Head0」と完全一致したら発動！
+            if (inputVal === 'Head0') {
+                TOTAL_HAIRS = 100000; // 100,000本に変更！
+                sfx.playClear();
+                document.getElementById('secretBox').classList.add('hidden');
+                startGame(); // そのまま100,000本モードでゲーム開始！
+            } else {
+                // 間違っていたらブザー音を鳴らして入力欄を空にする
+                sfx.playBleed();
+                document.getElementById('secretInput').value = '';
+                document.getElementById('secretInput').placeholder = 'パスワードが違います';
+            }
+        }
+        
         function startGame() {
             sfx.init();
             resetExplosions();
